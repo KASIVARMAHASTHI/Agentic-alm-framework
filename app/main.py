@@ -2,6 +2,7 @@ from fastapi import FastAPI
 
 from app.adapter.service import AdapterService
 from app.planner.service import PlannerService
+from app.planner.llm_planner import LLMPlannerService
 from app.approvals.service import ApprovalService
 from app.executor.service import ExecutionService
 from app.audit.service import AuditService
@@ -11,6 +12,7 @@ app = FastAPI(title="Agentic ALM Framework")
 
 adapter = AdapterService()
 planner = PlannerService()
+llm_planner = LLMPlannerService()
 approval = ApprovalService()
 executor = ExecutionService()
 audit = AuditService()
@@ -26,10 +28,14 @@ def process_insight(request: InsightRequest):
     # Step 1: Normalize input
     normalized = adapter.normalize(request.dict())
 
-    # Step 2: Create plan
-    plan = planner.create_plan(normalized)
+    # Step 2: LLM-based planning attempt
+    plan = llm_planner.create_plan(normalized)
 
-    # Step 3: Approval decision
+    # Step 3: Fallback to catalog planner if needed
+    if not plan or "plan" not in plan:
+        plan = planner.create_plan(normalized)
+
+    # Step 4: Approval decision
     approval_required = approval.requires_approval(plan)
 
     if approval_required:
@@ -44,10 +50,10 @@ def process_insight(request: InsightRequest):
             "audit": audit_log
         }
 
-    # Step 4: Execute
+    # Step 5: Execute
     execution_result = executor.execute(plan)
 
-    # Step 5: Audit
+    # Step 6: Audit
     audit_log = audit.log({
         "stage": "execution",
         "status": execution_result["execution_status"],
